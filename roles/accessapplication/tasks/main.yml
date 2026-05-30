@@ -1,2 +1,88 @@
 ---
+# roles/accessapplication/tasks/main.yml
+- name: Fetch Cloudflare credentials for tenant {{ tenant }}
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "cf-credentials-{{ tenant }}"
+    namespace: "{{ ansible_operator_meta.namespace }}"
+  register: tenant_secret
+  
+- name: Fail if tenant secret does not exist
+  ansible.builtin.fail:
+    msg: "Could not find secret 'cf-credentials-{{ tenant }}'"
+  when: tenant_secret.resources | length == 0
+
+- name: Decode and save the API token
+  ansible.builtin.set_fact:
+    # Kubernetes secrets are base64 encoded, so we must decode them
+    cloudflare_api_token: "{{ tenant_secret.resources[0].data.API_TOKEN | b64decode }}"
+    cloudflare_account_id: "{{ tenant_secret.resources[0].data.ACCOUNT_ID | b64decode }}"
+
 # tasks file for AccessApplication
+- name: Get Cloudflare Access Applications
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+  register: cf_apps
+
+# 1. Fetch existing applications to establish actual state
+- name: Get Cloudflare Access Applications
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+  register: cf_apps
+
+# 2. Extract the ID if the app already exists (Fixed: Safe from empty list crashes)
+- name: Filter apps by domain
+  ansible.builtin.set_fact:
+    matched_apps: "{{ cf_apps.json.result | selectattr('domain', 'equalto', domain) | list }}"
+
+- name: Set existing App ID
+  ansible.builtin.set_fact:
+    existing_app_id: "{{ matched_apps[0].id if matched_apps | length > 0 else '' }}"
+
+# 3. Dynamic Payload Assignment (Maps your CRD data structure perfectly)
+- name: Set target payload
+  ansible.builtin.set_fact:
+    cf_payload:
+      name: "{{ ansible_operator_meta.name }}"
+      type: "self_hosted"
+      domain: "{{ domain }}"
+      self_hosted_domains:
+        - "{{ domain }}"
+      destinations: "{{ destinations }}"
+      session_duration: "{{ session_duration | default('24h') }}"
+      allowed_idps: "{{ allowed_idps }}"
+      policies: "{{ policies }}"
+      app_launcher_visible: true
+      auto_redirect_to_identity: true
+
+# 4a. CREATE if it doesn't exist
+- name: Create Access Application
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+    body_format: json
+    body: "{{ cf_payload }}"
+  when: existing_app_id == ""
+
+# 4b. UPDATE if it already exists
+- name: Update Access Application
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps/{{ existing_app_id }}"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+    body_format: json
+    body: "{{ cf_payload }}"
+  when: existing_app_id != ""
+  

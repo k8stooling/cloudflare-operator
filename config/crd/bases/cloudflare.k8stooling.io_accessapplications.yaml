@@ -30,8 +30,65 @@ spec:
           metadata:
             type: object
           spec:
-            description: Spec defines the desired state of AccessApplication
             type: object
+            properties:
+              tenant:
+                type: string
+              domain:
+                type: string
+              destinations:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type: { type: string }
+                    uri: { type: string }
+                    zone_name: { type: string }
+              session_duration:
+                type: string
+                description: "How long a user session is valid (e.g., '24h', '15m')."
+                default: "24h"
+              allowed_idps:
+                type: array
+                description: "List of Identity Provider (IdP) UUIDs permitted to authenticate."
+                items:
+                  type: string
+              policies:
+                type: array
+                description: "Access policies defining authentication rules and exceptions."
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    decision:
+                      type: string
+                      enum: [allow, deny, bypass, non_identity]
+                    precedence:
+                      type: integer
+                    include:
+                      type: array
+                      items:
+                        type: object
+                        description: "Rule blocks like {'ip': {'ip': '...'}} or {'azureAD': {...}}"
+                    exclude:
+                      type: array
+                      items:
+                        type: object
+                    require:
+                      type: array
+                      items:
+                        type: object
+                  required:
+                    - name
+                    - decision
+                    - precedence
+            required:
+              - tenant
+              - domain
+              - destinations
+              - allowed_idps
+              - policies
             x-kubernetes-preserve-unknown-fields: true
           status:
             description: Status defines the observed state of AccessApplication
