@@ -33,7 +33,7 @@ helm upgrade --install cloudflare-operator oci://ghcr.io/k8stooling/charts/cloud
 
 ## Usage
 
-## The Credentials Secret
+### The Credentials Secret
 The operator needs a Cloudflare API Token and Account ID. You can drop this secret in the namespace where your Custom Resource lives, or let the operator fall back to its own system namespace.
 
 ```yaml
@@ -47,7 +47,7 @@ stringData:
 ```
 
 
-## The Custom Resource
+### The Custom Resource
 
 Here is a very simple MVP application. This creates an Access Application that bypasses SSO and only allows traffic from a specific IP block.
 
@@ -80,7 +80,7 @@ kubectl get accessapplication echo-test-app -o yaml
 
 In order to be able easily identify applications on Cloudflare the generated application will hold the name {{ tenant }}-{{ metadate.namespace }}-{{ metadata.name }}.
 
-# Development
+## Development
 
 This operator is built on the Operator SDK using the Ansible plugin. It relies on standard Ansible action modules and the kubernetes.core collection.
 
@@ -92,6 +92,6 @@ make docker-buildx IMG=ghcr.io/k8stooling/cloudflare-operator:latest
 
 (Note: The GitHub Actions pipeline is configured to automatically cross-compile and publish both the container image and the OCI Helm chart to GHCR).
 
-# Acknowledgments
+## Acknowledgments
 
 The architecture and design of this operator were created by the author, with Google Gemini serving as an intelligent pair-programmer/StackOverflow replacement during the build process.
