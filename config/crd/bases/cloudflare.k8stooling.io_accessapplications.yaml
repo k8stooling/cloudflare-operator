@@ -34,6 +34,9 @@ spec:
             properties:
               tenant:
                 type: string
+              secret_ref:
+                type: string
+                description: "Reference to the Cloudflare API secret. Format: 'secret-name' or 'namespace/secret-name'."
               domain:
                 type: string
               destinations:
@@ -70,21 +73,24 @@ spec:
                       type: array
                       items:
                         type: object
-                        description: "Rule blocks like {'ip': {'ip': '...'}} or {'azureAD': {...}}"
+                        x-kubernetes-preserve-unknown-fields: true
                     exclude:
                       type: array
                       items:
                         type: object
+                        x-kubernetes-preserve-unknown-fields: true
                     require:
                       type: array
                       items:
                         type: object
+                        x-kubernetes-preserve-unknown-fields: true
                   required:
                     - name
                     - decision
                     - precedence
             required:
               - tenant
+              - secret_ref
               - domain
               - destinations
               - allowed_idps

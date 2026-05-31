@@ -5,3 +5,6 @@
   kind: AccessApplication
   role: accessapplication
 # +kubebuilder:scaffold:watch
+  finalizer:
+    name: accessapplication.cloudflare.k8stooling.io/finalizer
+    role: delete_accessapplication
