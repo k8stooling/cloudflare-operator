@@ -1,109 +1,142 @@
 ---
-# roles/accessapplication/tasks/main.yml
-# tasks/main.yml
-# 1. Parse the secret_ref input (e.g., "my-secret" or "other-ns/my-secret")
-- name: Parse secret reference input
-  ansible.builtin.set_fact:
-    # If there is a '/', split it and take the second part. Otherwise, take the whole string.
-    parsed_secret_name: >-
-      {{ (secret_ref | split('/'))[1] if '/' in (secret_ref | default('')) else (secret_ref | default('cf-credentials-' + tenant)) }}
-    
-    # If there is a '/', take the first part. Otherwise, it is empty.
-    explicit_namespace: >-
-      {{ (secret_ref | split('/'))[0] if '/' in (secret_ref | default('')) else '' }}
+- block:
+  # roles/accessapplication/tasks/main.yml
+  # tasks/main.yml
+  # 1. Parse the secret_ref input (e.g., "my-secret" or "other-ns/my-secret")
+  - name: Parse secret reference input
+    ansible.builtin.set_fact:
+      # If there is a '/', split it and take the second part. Otherwise, take the whole string.
+      parsed_secret_name: >-
+        {{ (secret_ref | split('/'))[1] if '/' in (secret_ref | default('')) else (secret_ref | default('cf-credentials-' + tenant)) }}
+      
+      # If there is a '/', take the first part. Otherwise, it is empty.
+      explicit_namespace: >-
+        {{ (secret_ref | split('/'))[0] if '/' in (secret_ref | default('')) else '' }}
 
-# 2. Build the fallback list of namespaces to check
-- name: Determine target namespaces for secret lookup
-  ansible.builtin.set_fact:
-    target_namespaces: >-
-      {{
-         ([explicit_namespace] if explicit_namespace != '' else []) +
-         [ansible_operator_meta.namespace] +
-         ['cloudflare-operator-system']
-      }}
+  # 2. Build the fallback list of namespaces to check
+  - name: Determine target namespaces for secret lookup
+    ansible.builtin.set_fact:
+      target_namespaces: >-
+        {{
+          ([explicit_namespace] if explicit_namespace != '' else []) +
+          [ansible_operator_meta.namespace] +
+          ['cloudflare-operator-system']
+        }}
 
-# 3. Search for the Secret across the namespaces
-- name: Search for the Cloudflare Secret across namespaces
-  kubernetes.core.k8s_info:
-    api_version: v1
-    kind: Secret
-    name: "{{ parsed_secret_name }}"
-    namespace: "{{ item }}"
-  register: secret_search
-  loop: "{{ target_namespaces }}"
-  until: secret_search.resources | length > 0
-  ignore_errors: true 
+  # 3. Search for the Secret across the namespaces
+  - name: Search for the Cloudflare Secret across namespaces
+    kubernetes.core.k8s_info:
+      api_version: v1
+      kind: Secret
+      name: "{{ parsed_secret_name }}"
+      namespace: "{{ item }}"
+    register: secret_search
+    loop: "{{ target_namespaces }}"
+    until: secret_search.resources | length > 0
+    ignore_errors: true 
 
-# 4. Extract and Validate
-- name: Extract found secret
-  ansible.builtin.set_fact:
-    cf_secret: "{{ (secret_search.results | selectattr('resources') | map(attribute='resources') | flatten | first) | default({}) }}"
+  # 4. Extract and Validate
+  - name: Extract found secret
+    ansible.builtin.set_fact:
+      cf_secret: "{{ (secret_search.results | selectattr('resources') | map(attribute='resources') | flatten | first) | default({}) }}"
 
-- name: Fail if no secret was found
-  ansible.builtin.fail:
-    msg: "Could not find Cloudflare credentials secret '{{ parsed_secret_name }}' in namespaces: {{ target_namespaces | join(', ') }}"
-  when: cf_secret.keys() | length == 0
+  - name: Fail if no secret was found
+    ansible.builtin.fail:
+      msg: "Could not find Cloudflare credentials secret '{{ parsed_secret_name }}' in namespaces: {{ target_namespaces | join(', ') }}"
+    when: cf_secret.keys() | length == 0
 
-# 5. Map the API Keys (Supporting both formats)
-- name: Smart-map API Token and Account ID
-  ansible.builtin.set_fact:
-    cloudflare_api_token: >-
-      {{ (cf_secret.data['api-token'] | default(cf_secret.data['API_TOKEN'])) | b64decode }}
-    cloudflare_account_id: >-
-      {{ (cf_secret.data['cloudflare-account-id'] | default(cf_secret.data['ACCOUNT_ID'])) | b64decode }}
+  # 5. Map the API Keys (Supporting both formats)
+  - name: Smart-map API Token and Account ID
+    ansible.builtin.set_fact:
+      cloudflare_api_token: >-
+        {{ (cf_secret.data['api-token'] | default(cf_secret.data['API_TOKEN'])) | b64decode }}
+      cloudflare_account_id: >-
+        {{ (cf_secret.data['cloudflare-account-id'] | default(cf_secret.data['ACCOUNT_ID'])) | b64decode }}
 
-- name: Get Cloudflare Access Applications
-  ansible.builtin.uri:
-    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps"
-    method: GET
-    headers:
-      Authorization: "Bearer {{ cloudflare_api_token }}"
-      Content-Type: "application/json"
-  register: cf_apps
+  - name: Get Cloudflare Access Applications
+    ansible.builtin.uri:
+      url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps"
+      method: GET
+      headers:
+        Authorization: "Bearer {{ cloudflare_api_token }}"
+        Content-Type: "application/json"
+    register: cf_apps
 
-# 2. Extract the ID if the app already exists (Fixed: Safe from empty list crashes)
-- name: Filter apps by domain
-  ansible.builtin.set_fact:
-    matched_apps: "{{ cf_apps.json.result | selectattr('domain', 'equalto', domain) | list }}"
+  # 2. Extract the ID if the app already exists (Fixed: Safe from empty list crashes)
+  - name: Filter apps by domain
+    ansible.builtin.set_fact:
+      matched_apps: "{{ cf_apps.json.result | selectattr('domain', 'equalto', domain) | list }}"
 
-- name: Set existing App ID
-  ansible.builtin.set_fact:
-    existing_app_id: "{{ matched_apps[0].id if matched_apps | length > 0 else '' }}"
+  - name: Set existing App ID
+    ansible.builtin.set_fact:
+      existing_app_id: "{{ matched_apps[0].id if matched_apps | length > 0 else '' }}"
 
-# 3. Dynamic Payload Assignment (Maps your CRD data structure perfectly)
-- name: Set target payload
-  ansible.builtin.set_fact:
-    cf_payload:
-      name: "{{ tenant }}-{{ ansible_operator_meta.namespace }}-{{ ansible_operator_meta.name }}"
-      type: "self_hosted"
-      domain: "{{ domain }}"
-      self_hosted_domains:
-        - "{{ domain }}"
-      destinations: "{{ destinations }}"
-      session_duration: "{{ session_duration | default('24h') }}"
-      allowed_idps: "{{ allowed_idps }}"
-      policies: "{{ policies }}"
-      app_launcher_visible: true
-      auto_redirect_to_identity: true
+  # 3. Dynamic Payload Assignment (Maps your CRD data structure perfectly)
+  - name: Set target payload
+    ansible.builtin.set_fact:
+      cf_payload:
+        name: "{{ tenant }}-{{ ansible_operator_meta.namespace }}-{{ ansible_operator_meta.name }}"
+        type: "self_hosted"
+        domain: "{{ domain }}"
+        self_hosted_domains:
+          - "{{ domain }}"
+        destinations: "{{ destinations }}"
+        session_duration: "{{ session_duration | default('24h') }}"
+        allowed_idps: "{{ allowed_idps }}"
+        policies: "{{ policies }}"
+        app_launcher_visible: true
+        auto_redirect_to_identity: true
 
-# 4a. CREATE if it doesn't exist
-- name: Create Access Application
-  ansible.builtin.uri:
-    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps"
-    method: POST
-    headers:
-      Authorization: "Bearer {{ cloudflare_api_token }}"
-    body_format: json
-    body: "{{ cf_payload }}"
-  when: existing_app_id == ""
+  # 4a. CREATE if it doesn't exist
+  - name: Create Access Application
+    ansible.builtin.uri:
+      url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps"
+      method: POST
+      headers:
+        Authorization: "Bearer {{ cloudflare_api_token }}"
+      body_format: json
+      body: "{{ cf_payload }}"
+    when: existing_app_id == ""
 
-# 4b. UPDATE if it already exists
-- name: Update Access Application
-  ansible.builtin.uri:
-    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps/{{ existing_app_id }}"
-    method: PUT
-    headers:
-      Authorization: "Bearer {{ cloudflare_api_token }}"
-    body_format: json
-    body: "{{ cf_payload }}"
-  when: existing_app_id != ""
+  # 4b. UPDATE if it already exists
+  - name: Update Access Application
+    ansible.builtin.uri:
+      url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps/{{ existing_app_id }}"
+      method: PUT
+      headers:
+        Authorization: "Bearer {{ cloudflare_api_token }}"
+      body_format: json
+      body: "{{ cf_payload }}"
+    when: existing_app_id != ""
+
+  - name: Get current timestamp
+    ansible.builtin.set_fact:
+      current_time: "{{ lookup('pipe', 'date -u +\"%Y-%m-%dT%H:%M:%SZ\"') }}"
+
+  - name: Update Custom Resource Status
+    operator_sdk.util.k8s_status:
+      api_version: cloudflare.k8stooling.io/v1alpha1
+      kind: AccessApplication
+      name: "{{ ansible_operator_meta.name }}"
+      namespace: "{{ ansible_operator_meta.namespace }}"
+      status:
+        cloudflareAppId: "{{ existing_app_id | default(cf_payload.name + '-created') }}"
+        reconciliationState: "Successful"
+        lastSynced: "{{ current_time }}"
+        domain: "{{ domain }}"
+
+  rescue:
+      - name: Update Status (Failed)
+        operator_sdk.util.k8s_status:
+          api_version: cloudflare.k8stooling.io/v1alpha1
+          kind: AccessApplication
+          name: "{{ ansible_operator_meta.name }}"
+          namespace: "{{ ansible_operator_meta.namespace }}"
+          status:
+            reconciliationState: "Failed"
+            errorMessage: "The Ansible playbook encountered an error. Check operator logs."
+            lastSynced: "{{ lookup('pipe', 'date -u +\"%Y-%m-%dT%H:%M:%SZ\"') }}"
+
+      - name: Fail the playbook so Kubernetes knows it failed
+        ansible.builtin.fail:
+          msg: "Playbook failed. Status updated on Custom Resource."
