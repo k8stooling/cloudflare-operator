@@ -1,0 +1,79 @@
+---
+# 1. Fetch credentials (reuse your smart lookup logic from above)
+- name: Parse secret reference input
+  ansible.builtin.set_fact:
+    # If there is a '/', split it and take the second part. Otherwise, take the whole string.
+    parsed_secret_name: >-
+      {{ (secret_ref | split('/'))[1] if '/' in (secret_ref | default('')) else (secret_ref | default('cf-credentials-' + tenant)) }}
+    
+    # If there is a '/', take the first part. Otherwise, it is empty.
+    explicit_namespace: >-
+      {{ (secret_ref | split('/'))[0] if '/' in (secret_ref | default('')) else '' }}
+
+# 2. Get the Operator's runtime namespace
+- name: Determine Operator runtime namespace
+  ansible.builtin.set_fact:
+    # Looks up the env var, falls back to 'kube-system' if empty/missing
+    operator_namespace: "{{ lookup('env', 'POD_NAMESPACE') | default('kube-system', true) }}"
+
+# 3. Build the fallback list of namespaces to check
+- name: Determine target namespaces for secret lookup
+  ansible.builtin.set_fact:
+    target_namespaces: >-
+      {{
+         ([explicit_namespace] if explicit_namespace != '' else []) +
+         [ansible_operator_meta.namespace] +
+         [operator_namespace]
+      }}
+
+# 3. Search for the Secret across the namespaces
+- name: Search for the Cloudflare Secret across namespaces
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ parsed_secret_name }}"
+    namespace: "{{ item }}"
+  register: secret_search
+  loop: "{{ target_namespaces }}"
+  until: secret_search.resources | length > 0
+  ignore_errors: true 
+
+# 4. Extract and Validate
+- name: Extract found secret
+  ansible.builtin.set_fact:
+    cf_secret: "{{ (secret_search.results | selectattr('resources') | map(attribute='resources') | flatten | first) | default({}) }}"
+
+- name: Fail if no secret was found
+  ansible.builtin.fail:
+    msg: "Could not find Cloudflare credentials secret '{{ parsed_secret_name }}' in namespaces: {{ target_namespaces | join(', ') }}"
+  when: cf_secret.keys() | length == 0
+
+# 5. Map the API Keys (Supporting both formats)
+- name: Smart-map API Token and Account ID
+  ansible.builtin.set_fact:
+    cloudflare_api_token: >-
+      {{ (cf_secret.data['api-token'] | default(cf_secret.data['API_TOKEN'])) | b64decode }}
+    cloudflare_account_id: >-
+      {{ (cf_secret.data['cloudflare-account-id'] | default(cf_secret.data['ACCOUNT_ID'])) | b64decode }}
+
+- name: Get Cloudflare Access Applications
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Content-Type: "application/json"
+  register: cf_apps
+
+- name: Filter apps by domain
+  ansible.builtin.set_fact:
+    matched_apps: "{{ cf_apps.json.result | selectattr('domain', 'equalto', domain) | list }}"
+
+# 3. Delete it if it exists
+- name: Delete Access Application from Cloudflare
+  ansible.builtin.uri:
+    url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps/{{ matched_apps[0].id }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ cloudflare_api_token }}"
+  when: matched_apps | length > 0
