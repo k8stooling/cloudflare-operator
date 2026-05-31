@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cloudflare-operator.fullname" . }}-accessapplication-viewer
+  labels:
+    {{- include "cloudflare-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["cloudflare.k8stooling.io"]
+    resources: [accessapplications]
+    verbs: [get, list, watch]
+  - apiGroups: ["cloudflare.k8stooling.io"]
+    resources: [accessapplications/status]
+    verbs: [get]
