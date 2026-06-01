@@ -3,11 +3,17 @@
   # roles/accessapplication/tasks/main.yml
   # tasks/main.yml
   # 1. Parse the secret_ref input (e.g., "my-secret" or "other-ns/my-secret")
+  
+  
+  - name: Set default secret name
+    set_fact:
+      default_secret_name: "{{ lookup('env', 'DEFAULT_SECRET_NAME') | default('cf-credentials-' + tenant) }}"
+
   - name: Parse secret reference input
     ansible.builtin.set_fact:
       # If there is a '/', split it and take the second part. Otherwise, take the whole string.
       parsed_secret_name: >-
-        {{ (secret_ref | split('/'))[1] if '/' in (secret_ref | default('')) else (secret_ref | default('cf-credentials-' + tenant)) }}
+        {{ (secret_ref | split('/'))[1] if '/' in (secret_ref | default('')) else (secret_ref | default(default_secret_name)) }}
       
       # If there is a '/', take the first part. Otherwise, it is empty.
       explicit_namespace: >-

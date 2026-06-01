@@ -41,6 +41,10 @@ spec:
           env:
             - name: ANSIBLE_GATHERING
               value: explicit
+            {{- with .Values.defaultSecretName }}
+            - name: DEFAULT_SECRET_NAME
+              value: {{ . | quote }}
+            {{- end }}
             - name: WATCH_NAMESPACE
               value: {{ .Values.watchNamespace | default "" | quote }}
             - name: POD_NAME

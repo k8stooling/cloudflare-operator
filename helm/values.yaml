@@ -109,4 +109,5 @@ tolerations: []
 
 affinity: {}
 
+defaultSecretName: null
 watchNamespace: ""
