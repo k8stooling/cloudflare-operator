@@ -55,9 +55,9 @@
   - name: Smart-map API Token and Account ID
     ansible.builtin.set_fact:
       cloudflare_api_token: >-
-        {{ (cf_secret.data['api-token'] | default(cf_secret.data['API_TOKEN'])) | b64decode }}
+        {{ (cf_secret.data['api-token'] | default(cf_secret.data['api_token'] | default(cf_secret.data['API_TOKEN']))) | b64decode }}
       cloudflare_account_id: >-
-        {{ (cf_secret.data['cloudflare-account-id'] | default(cf_secret.data['ACCOUNT_ID'])) | b64decode }}
+        {{ (cf_secret.data['cloudflare-account-id'] | default(cf_secret.data['account_id'] | default(cf_secret.data['ACCOUNT_ID']))) | b64decode }}
 
   - name: Get Cloudflare Access Applications
     ansible.builtin.uri:
