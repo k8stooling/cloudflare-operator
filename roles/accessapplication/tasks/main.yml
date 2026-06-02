@@ -77,6 +77,22 @@
     ansible.builtin.set_fact:
       existing_app_id: "{{ matched_apps[0].id if matched_apps | length > 0 else '' }}"
 
+  - name: Normalize IDP and auto-redirect settings
+    ansible.builtin.set_fact:
+      normalized_allowed_idps: "{{ allowed_idps | default([]) }}"
+      auto_redirect_requested: "{{ auto_redirect_to_identity | default(false) }}"
+
+  - name: Fail if auto-redirect is invalid
+    ansible.builtin.fail:
+      msg: "auto_redirect_to_identity=true requires exactly one allowed_idp"
+    when:
+      - auto_redirect_requested
+      - normalized_allowed_idps | length != 1
+
+  - name: Compute final auto-redirect flag
+    ansible.builtin.set_fact:
+      auto_redirect_final: "{{ auto_redirect_requested and (normalized_allowed_idps | length == 1) }}"
+
   # 3. Dynamic Payload Assignment (Maps your CRD data structure perfectly)
   - name: Set target payload
     ansible.builtin.set_fact:
@@ -88,10 +104,10 @@
           - "{{ domain }}"
         destinations: "{{ destinations }}"
         session_duration: "{{ session_duration | default('24h') }}"
-        allowed_idps: "{{ allowed_idps }}"
+        allowed_idps: "{{ normalized_allowed_idps if normalized_allowed_idps | length > 0 else omit }}"
         policies: "{{ policies }}"
         app_launcher_visible: true
-        auto_redirect_to_identity: true
+        auto_redirect_to_identity: "{{ auto_redirect_final }}"
 
   # 4a. CREATE if it doesn't exist
   - name: Create Access Application

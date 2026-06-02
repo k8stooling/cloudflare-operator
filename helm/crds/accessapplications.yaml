@@ -92,7 +92,6 @@ spec:
               - tenant
               - domain
               - destinations
-              - allowed_idps
               - policies
             x-kubernetes-preserve-unknown-fields: true
           status:
