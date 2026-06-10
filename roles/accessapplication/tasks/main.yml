@@ -24,9 +24,13 @@
     ansible.builtin.set_fact:
       target_namespaces: >-
         {{
-          ([explicit_namespace] if explicit_namespace != '' else []) +
-          [ansible_operator_meta.namespace] +
-          ['cloudflare-operator-system']
+          (
+            ([explicit_namespace] if explicit_namespace != '' else []) +
+            [ansible_operator_meta.namespace] +
+            ([lookup('env', 'POD_NAMESPACE') | default('', true)])
+          )
+          | reject('equalto','')
+          | unique
         }}
 
   # 3. Search for the Secret across the namespaces
