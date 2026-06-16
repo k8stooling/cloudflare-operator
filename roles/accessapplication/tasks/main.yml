@@ -122,6 +122,7 @@
       ansible.builtin.uri:
         url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps/{{ current_cloudflare_app_id }}"
         method: PUT
+        status_code: [200, 201, 404, 429]
         headers:
           Authorization: "Bearer {{ cloudflare_api_token }}"
         body_format: json
@@ -153,6 +154,7 @@
       ansible.builtin.uri:
         url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps?name={{ tenant }}-{{ ansible_operator_meta.namespace }}-{{ ansible_operator_meta.name }}&exact=true"
         method: GET
+        status_code: [200, 201, 429]
         headers:
           Authorization: "Bearer {{ cloudflare_api_token }}"
           Content-Type: "application/json"
@@ -176,6 +178,7 @@
       ansible.builtin.uri:
         url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps"
         method: POST
+        status_code: [200, 201, 429]
         headers:
           Authorization: "Bearer {{ cloudflare_api_token }}"
         body_format: json
@@ -190,6 +193,7 @@
       ansible.builtin.uri:
         url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps/{{ existing_app_id }}"
         method: PUT
+        status_code: [200, 201, 429]
         headers:
           Authorization: "Bearer {{ cloudflare_api_token }}"
         body_format: json
