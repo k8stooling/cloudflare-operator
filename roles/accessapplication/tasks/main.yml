@@ -96,18 +96,31 @@
         app_launcher_visible: true
         auto_redirect_to_identity: "{{ auto_redirect_final }}"
 
+  - name: Read current AccessApplication resource
+    kubernetes.core.k8s_info:
+      api_version: cloudflare.k8stooling.io/v1alpha1
+      kind: AccessApplication
+      name: "{{ ansible_operator_meta.name }}"
+      namespace: "{{ ansible_operator_meta.namespace }}"
+    register: accessapplication_cr
+
+  - name: Set current resource status snapshot
+    ansible.builtin.set_fact:
+      current_resource_status: "{{ (accessapplication_cr.resources | first | default({})).status | default({}) }}"
+      current_cloudflare_app_id: "{{ ((accessapplication_cr.resources | first | default({})).status | default({})).cloudflareAppId | default('') }}"
+
   - name: Initialize resolved app ID
     ansible.builtin.set_fact:
       resolved_app_id: ""
 
   - name: Existing Access application
-    when: "(status.cloudflareAppId | default('')) != ''"
+    when: "current_cloudflare_app_id != ''"
     block:
 
     # 4b. UPDATE if it already exists
     - name: Update Access Application
       ansible.builtin.uri:
-        url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps/{{ status.cloudflareAppId }}"
+        url: "https://api.cloudflare.com/client/v4/accounts/{{ cloudflare_account_id }}/access/apps/{{ current_cloudflare_app_id }}"
         method: PUT
         headers:
           Authorization: "Bearer {{ cloudflare_api_token }}"
@@ -120,7 +133,7 @@
       failed_when: cf_update.status not in [200, 201, 404]
 
   - name: New Access application
-    when: "(status.cloudflareAppId | default('')) == '' or (cf_update.status | default(0)) in [404]"
+    when: "current_cloudflare_app_id == '' or (cf_update.status | default(0)) in [404]"
     block:
 
     - name: clean cloudflareAppId
@@ -199,7 +212,7 @@
       namespace: "{{ ansible_operator_meta.namespace }}"
       status:
         cloudflareAppId: >-
-          {{ resolved_app_id if (resolved_app_id | default('')) != '' else status.cloudflareAppId }}
+          {{ resolved_app_id if (resolved_app_id | default('')) != '' else current_cloudflare_app_id }}
 
         reconciliationState: "Successful"
         lastSynced: "{{ lookup('pipe', 'date -u +\"%Y-%m-%dT%H:%M:%SZ\"') }}"
