@@ -96,6 +96,10 @@
         app_launcher_visible: true
         auto_redirect_to_identity: "{{ auto_redirect_final }}"
 
+  - name: Compute desired payload hash
+    ansible.builtin.set_fact:
+      desired_payload_hash: "{{ cf_payload | to_json | hash('sha256') }}"
+
   - name: Read current AccessApplication resource
     kubernetes.core.k8s_info:
       api_version: cloudflare.k8stooling.io/v1alpha1
@@ -108,13 +112,18 @@
     ansible.builtin.set_fact:
       current_resource_status: "{{ (accessapplication_cr.resources | first | default({})).status | default({}) }}"
       current_cloudflare_app_id: "{{ ((accessapplication_cr.resources | first | default({})).status | default({})).cloudflareAppId | default('') }}"
+      current_payload_hash: "{{ ((accessapplication_cr.resources | first | default({})).status | default({})).payloadHash | default('') }}"
+
+  - name: Determine whether Cloudflare needs reconciliation
+    ansible.builtin.set_fact:
+      cloudflare_reconcile_needed: "{{ current_cloudflare_app_id == '' or current_payload_hash != desired_payload_hash }}"
 
   - name: Initialize resolved app ID
     ansible.builtin.set_fact:
       resolved_app_id: ""
 
   - name: Existing Access application
-    when: "current_cloudflare_app_id != ''"
+    when: "current_cloudflare_app_id != '' and cloudflare_reconcile_needed"
     block:
 
     # 4b. UPDATE if it already exists
@@ -134,7 +143,7 @@
       failed_when: cf_update.status not in [200, 201, 404]
 
   - name: New Access application
-    when: "current_cloudflare_app_id == '' or (cf_update.status | default(0)) in [404]"
+    when: "cloudflare_reconcile_needed and (current_cloudflare_app_id == '' or (cf_update.status | default(0)) in [404])"
     block:
 
     - name: clean cloudflareAppId
@@ -217,6 +226,7 @@
       status:
         cloudflareAppId: >-
           {{ resolved_app_id if (resolved_app_id | default('')) != '' else current_cloudflare_app_id }}
+        payloadHash: "{{ desired_payload_hash }}"
 
         reconciliationState: "Successful"
         lastSynced: "{{ lookup('pipe', 'date -u +\"%Y-%m-%dT%H:%M:%SZ\"') }}"
