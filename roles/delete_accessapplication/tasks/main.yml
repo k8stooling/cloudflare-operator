@@ -66,8 +66,8 @@
       Authorization: "Bearer {{ cloudflare_api_token }}"
       Content-Type: "application/json"
   register: cf_apps
-  retries: 5
-  delay: 3
+  retries: 10
+  delay: 60
   until: cf_apps.status in [200]
 
 - name: Filter apps by domain
@@ -83,7 +83,7 @@
     headers:
       Authorization: "Bearer {{ cloudflare_api_token }}"
   register: cf_delete
-  retries: 5
-  delay: 3
+  retries: 10
+  delay: 60
   until: cf_delete.status in [200, 202]
   when: matched_apps | length > 0

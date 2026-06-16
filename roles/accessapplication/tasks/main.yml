@@ -137,8 +137,8 @@
         body_format: json
         body: "{{ cf_payload }}"
       register: cf_update
-      retries: 5
-      delay: "{{ 2 ** (ansible_retry_number | default(1)) }}"
+      retries: 10
+      delay: 60
       until: cf_update.status in [200, 201, 404]
       failed_when: cf_update.status not in [200, 201, 404]
 
@@ -168,8 +168,8 @@
           Authorization: "Bearer {{ cloudflare_api_token }}"
           Content-Type: "application/json"
       register: cf_apps
-      retries: 5
-      delay: "{{ 2 ** (ansible_retry_number | default(1)) }}"
+      retries: 10
+      delay: 60
       until: cf_apps.status in [200, 201]
       no_log: true
       
@@ -193,8 +193,8 @@
         body_format: json
         body: "{{ cf_payload }}"
       register: created_application
-      retries: 5
-      delay: "{{ 2 ** (ansible_retry_number | default(1)) }}"
+      retries: 10
+      delay: 60
       until: created_application.status in [200, 201]
       when: existing_app_id == ''
 
@@ -208,8 +208,8 @@
         body_format: json
         body: "{{ cf_payload }}"
       register: cf_update
-      retries: 5
-      delay: "{{ 2 ** (ansible_retry_number | default(1)) }}"
+      retries: 10
+      delay: 60
       until: cf_update.status in [200, 201]
       when: existing_app_id != ''
 
